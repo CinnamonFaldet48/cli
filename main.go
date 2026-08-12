@@ -4,33 +4,42 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/zalando/go-keyring"
 )
 
-// Mocking keyring errors
-var ErrNotFound = errors.New("secret not found")
+const (
+	keyringService  = "gh"
+	keyringUsername = "oauth_token"
+)
+
+// keyringGet is a variable so token resolution can be tested without depending
+// on a desktop keyring being available in the test environment.
+var keyringGet = keyring.Get
 
 func getTokenFromKeyring() (string, error) {
-	// Simulate a system error (e.g., dbus connection failure)
-	// In a real scenario, this would call the keyring library
-	return "", errors.New("failed to access system keyring: dbus connection refused")
+	return keyringGet(keyringService, keyringUsername)
 }
 
 func getAuthToken() (string, error) {
-	// 1. Check environment variables first
-	if token := os.Getenv("GH_TOKEN"); token != "" {
+	// Explicit environment tokens bypass the keyring entirely.
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if token := os.Getenv(name); token != "" {
+			return token, nil
+		}
+	}
+
+	token, err := getTokenFromKeyring()
+	if err == nil {
 		return token, nil
 	}
-
-	// 2. Attempt keyring lookup
-	token, err := getTokenFromKeyring()
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return "", nil // Safe to proceed unauthenticated
-		}
-		return "", err // Abort on system error
+	if errors.Is(err, keyring.ErrNotFound) {
+		// A missing credential is different from an inaccessible keyring and may
+		// legitimately result in an unauthenticated request.
+		return "", nil
 	}
 
-	return token, nil
+	return "", fmt.Errorf("failed to access system keyring: %w", err)
 }
 
 func main() {
@@ -42,7 +51,7 @@ func main() {
 
 	if token == "" {
 		fmt.Println("Running as unauthenticated user")
-	} else {
-		fmt.Println("Authenticated successfully")
+		return
 	}
+	fmt.Println("Authenticated successfully")
 }
