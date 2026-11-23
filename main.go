@@ -27,7 +27,9 @@ func getAuthToken() (string, error) {
 		if errors.Is(err, ErrNotFound) {
 			return "", nil // Safe to proceed unauthenticated
 		}
-		return "", err // Abort on system error
+		// Log a warning message for system-level errors
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		return "", nil // Proceed unauthenticated
 	}
 
 	return token, nil
